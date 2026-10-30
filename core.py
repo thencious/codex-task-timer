@@ -203,6 +203,11 @@ class Task:
     delivery_id: str = ""
     retry_at: float = 0
     turn_id: str = ""
+    new_chat: bool = False
+
+    @property
+    def queue_key(self):
+        return self.id if self.new_chat else self.chat_id
 
     def __post_init__(self):
         if not self.id:
@@ -252,10 +257,12 @@ def build_command(executable: str, task: Task) -> list[str]:
     command = [executable, "exec", "-c", 'approval_policy="never"']
     if task.effort != "Default":
         command += ["-c", f'model_reasoning_effort="{task.effort}"']
-    command += ["resume", "--all", "--skip-git-repo-check", "--json", "-o", task.response]
+    if not task.new_chat:
+        command += ["resume", "--all"]
+    command += ["--skip-git-repo-check", "--json", "-o", task.response]
     if task.model:
         command += ["-m", task.model]
-    return command + [task.chat_id, "-"]
+    return command + (["-"] if task.new_chat else [task.chat_id, "-"])
 
 
 class Scheduler:
@@ -274,7 +281,7 @@ class Scheduler:
         self.store.save(self.tasks)
 
     def readiness_error(self, task: Task) -> str:
-        if not task.chat_id:
+        if not task.chat_id and not task.new_chat:
             return "Choose a chat."
         if not task.cwd or not Path(task.cwd).is_dir():
             return "Working folder is missing. Right-click to choose a folder."
@@ -360,7 +367,7 @@ class Scheduler:
         removable = {task.id for task in self.tasks
                          if task.status == "sent" or (task.status == "scheduled" and task.default_timer and task.default_due is not None
                          and task.due is not None and task.due <= self.clock() and task.id not in self.editing
-                         and (not task.chat_id.strip() or not task.message.strip()))}
+                         and ((not task.chat_id.strip() and not task.new_chat) or not task.message.strip()))}
         if removable:
             previous_tasks = self.tasks[:]
             self.tasks[:] = [task for task in self.tasks if task.id not in removable]
@@ -369,16 +376,16 @@ class Scheduler:
             except OSError:
                 self.tasks[:] = previous_tasks
                 raise
-        running = {task.chat_id for task in self.tasks if task.status == "running"}
+        running = {task.queue_key for task in self.tasks if task.status == "running"}
         first_for_chat = {}
         for pending in sorted((task for task in self.tasks if task.status == "scheduled" and task.due is not None),
                               key=lambda task: task.due):
-            first_for_chat.setdefault(pending.chat_id, pending.id)
+            first_for_chat.setdefault(pending.queue_key, pending.id)
         ready = sorted((task for task in self.tasks if task.status == "scheduled"
                         and task.due is not None and task.due <= self.clock()
                         and task.retry_at <= self.clock()), key=lambda task: task.due)
         for task in ready:
-            if task.id in self.editing or task.chat_id in running or first_for_chat.get(task.chat_id) != task.id:
+            if task.id in self.editing or task.queue_key in running or first_for_chat.get(task.queue_key) != task.id:
                 continue
             if error := self.readiness_error(task):
                 task.error = error
@@ -398,7 +405,7 @@ class Scheduler:
             except OSError:
                 task.status = "scheduled"
                 raise
-            running.add(task.chat_id)
+            running.add(task.queue_key)
             threading.Thread(target=self._worker, args=(task,), daemon=True).start()
 
     def _worker(self, task: Task):

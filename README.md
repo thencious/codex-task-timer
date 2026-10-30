@@ -7,7 +7,7 @@ A small, dark Windows app that queues messages for your existing Codex CLI chats
 ## Features
 
 - Multiple independent tasks, each with a chat, thinking level, message, and live countdown.
-- Chats from every working directory; the working folder is selected automatically.
+- Chats from every working directory; new tasks select the most recently updated chat and its folder automatically. Choose **New chat** at the bottom of the dropdown to start a fresh conversation in that folder (right-click to change it).
 - New timers default to your five-hour usage reset **plus one minute**, when available.
 - Pause, resume, stop, send immediately, or remove a task.
 - Messages wrap and grow to fit. Successful tasks disappear after Codex finishes.

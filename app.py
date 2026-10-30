@@ -25,6 +25,7 @@ MUTED = "#89929f"
 ACCENT = "#74cbbb"
 ERROR = "#f19a91"
 DEFAULT_HEIGHT = 620
+NEW_CHAT = "New chat"
 
 
 def configure_if_changed(widget, **options):
@@ -338,9 +339,11 @@ class TaskRow:
             self.message_hint.place_forget()
 
     def refresh_chats(self):
-        self.chat_input.configure(values=[chat.label for chat in self.app.chats])
+        self.chat_input.configure(values=[chat.label for chat in self.app.chats] + [NEW_CHAT])
         found = next((chat for chat in self.app.chats if chat.id == self.task.chat_id), None)
-        if found:
+        if self.task.new_chat:
+            self.chat.set(NEW_CHAT)
+        elif found:
             self.chat.set(found.label)
             if self.task.status != "running":
                 self.task.chat_title = found.title
@@ -360,8 +363,20 @@ class TaskRow:
         self.effort_input.configure(values=options)
 
     def select_chat(self, _event=None):
+        if self.task.status == "running":
+            return
+        if self.chat.get() == NEW_CHAT:
+            self.task.new_chat = True
+            self.task.chat_id = ""
+            self.task.chat_title = NEW_CHAT
+            if not self.task.cwd:
+                self.task.cwd = str(Path.home())
+            self.task.error = ""
+            self.app.save_later()
+            return
         chat = next((chat for chat in self.app.chats if chat.label == self.chat.get()), None)
         if chat and self.task.status != "running":
+            self.task.new_chat = False
             self.task.chat_id, self.task.chat_title = chat.id, chat.title
             self.task.cwd, self.task.model = automatic_directory(chat), chat.model
             self.task.cwd_manual = False
@@ -566,7 +581,12 @@ class App:
                 self.canvas.focus_set()
 
     def add_task(self):
+        self.refresh_chats()
         task = Task()
+        if self.chats:
+            chat = max(self.chats, key=lambda chat: chat.updated_at)
+            task.chat_id, task.chat_title = chat.id, chat.title
+            task.cwd, task.model = automatic_directory(chat), chat.model
         self.scheduler.tasks.append(task)
         self.apply_reset_default(task)
         self.rows.append(TaskRow(self, task))

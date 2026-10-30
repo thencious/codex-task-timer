@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 from tkinter import ttk
 
-from app import App, BG
+from app import App, BG, NEW_CHAT
 from core import Chat, Scheduler, Store
 from rate_limits import FiveHourReset
 
@@ -34,6 +34,30 @@ class DesktopTests(unittest.TestCase):
         self.row.focus_time()
         self.row.delay.set(value)
         self.row.confirm_time(event)
+
+    def test_added_task_defaults_to_latest_chat_and_automatic_folder(self):
+        latest = Chat("latest", "Recently used", str(Path(self.temp.name)), "new-model", 20)
+        with patch("app.discover_chats", return_value=[self.chat, latest]):
+            self.app.add_task()
+        task = self.app.rows[-1].task
+        self.assertEqual((task.chat_id, task.chat_title, task.cwd, task.model),
+                         (latest.id, latest.title, latest.cwd, latest.model))
+        self.assertFalse(task.new_chat)
+
+    def test_new_chat_is_last_option_and_preserves_folder_across_refresh(self):
+        self.assertEqual(self.row.chat_input.cget("values")[-1], NEW_CHAT)
+        folder = self.row.task.cwd
+        self.row.chat.set(NEW_CHAT)
+        self.row.select_chat()
+        self.app.refresh_chats()
+        self.assertTrue(self.row.task.new_chat)
+        self.assertEqual(self.row.task.chat_id, "")
+        self.assertEqual(self.row.task.cwd, folder)
+        self.assertEqual(self.row.chat.get(), NEW_CHAT)
+        self.row.chat.set(self.chat.label)
+        self.row.select_chat()
+        self.assertFalse(self.row.task.new_chat)
+        self.assertEqual(self.row.task.chat_id, self.chat.id)
 
     def test_dark_two_line_rows_and_plus_under_last_row(self):
         self.app.add_task()

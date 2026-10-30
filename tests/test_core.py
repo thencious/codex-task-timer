@@ -14,6 +14,16 @@ from core import (Chat, Scheduler, Store, Task, automatic_directory, build_comma
 
 
 class TimerTests(unittest.TestCase):
+    def test_new_chat_builds_fresh_exec_command_with_same_settings(self):
+        task = Task(new_chat=True, cwd="example", effort="high", model="test-model", response="answer.txt")
+        command = build_command("codex", task)
+        self.assertNotIn("resume", command)
+        self.assertNotIn("--all", command)
+        self.assertEqual(command[-1], "-")
+        self.assertNotIn("", command)
+        self.assertIn('model_reasoning_effort="high"', command)
+        self.assertIn("test-model", command)
+
     def test_hour_minute_input_and_seconds_display(self):
         self.assertEqual(parse_delay("2:30"), 9000)
         self.assertEqual(parse_delay("0:00"), 0)
@@ -83,6 +93,16 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(task.status, "sent")
         self.assertNotIn(task, self.scheduler.tasks)
         self.assertEqual(self.store.load(), [])
+
+    def test_new_chat_default_timer_dispatches_and_is_persisted(self):
+        task = self.task(chat_id="", new_chat=True, default_due=self.now + 60)
+        self.scheduler.start(task, deadline=task.default_due)
+        self.assertTrue(self.store.load()[0].new_chat)
+        self.now += 61
+        self.scheduler.tick()
+        self.assertEqual(self.calls.get(timeout=5), task.id)
+        self.complete()
+        self.assertNotIn(task, self.scheduler.tasks)
 
     def test_pause_resume_uses_remaining_time(self):
         task = self.task()
